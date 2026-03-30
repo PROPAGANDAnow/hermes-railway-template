@@ -138,9 +138,11 @@ Entrypoint (`scripts/entrypoint.sh`) does the following:
 
 Docker build arg:
 
-- `HERMES_GIT_REF` (default: `main`)
+- `HERMES_GIT_REF` (default: `v2026.3.30`)
 
 Override in Railway if you want to pin a tag or commit.
+
+Auto-sync: GitHub Actions checks upstream Hermes releases every 6 hours and updates this default pin, which creates a commit in this repo and triggers Railway redeploys.
 
 ## Local smoke test
 

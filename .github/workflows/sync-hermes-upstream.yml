@@ -1,0 +1,92 @@
+name: Sync Hermes upstream
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-hermes-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch latest Hermes release
+        id: upstream
+        run: |
+          set -euo pipefail
+          response="$(curl -fsSL https://api.github.com/repos/NousResearch/hermes-agent/releases/latest)"
+          tag="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])' <<< "$response")"
+          name="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["name"])' <<< "$response")"
+          url="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["html_url"])' <<< "$response")"
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Read current pin
+        id: current
+        run: |
+          set -euo pipefail
+          current="$(grep -oP '^ARG HERMES_GIT_REF=\K.*' Dockerfile)"
+          echo "tag=$current" >> "$GITHUB_OUTPUT"
+
+      - name: Update repo to latest Hermes release
+        if: steps.current.outputs.tag != steps.upstream.outputs.tag
+        env:
+          NEW_TAG: ${{ steps.upstream.outputs.tag }}
+          RELEASE_NAME: ${{ steps.upstream.outputs.name }}
+          RELEASE_URL: ${{ steps.upstream.outputs.url }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, re
+
+          tag = os.environ['NEW_TAG']
+          release_name = os.environ['RELEASE_NAME']
+          release_url = os.environ['RELEASE_URL']
+
+          dockerfile = Path('Dockerfile')
+          docker_text = dockerfile.read_text()
+          docker_text = re.sub(r'^ARG HERMES_GIT_REF=.*$', f'ARG HERMES_GIT_REF={tag}', docker_text, count=1, flags=re.M)
+          dockerfile.write_text(docker_text)
+
+          readme = Path('README.md')
+          readme_text = readme.read_text()
+          readme_text = re.sub(
+              r'- `HERMES_GIT_REF` \(default: `[^`]+`\)',
+              f'- `HERMES_GIT_REF` (default: `{tag}`)',
+              readme_text,
+              count=1,
+          )
+          readme.write_text(readme_text)
+
+          Path('.hermes-upstream-version').write_text(
+              f'tag={tag}\n'
+              f'release_name={release_name}\n'
+              f'release_url={release_url}\n'
+          )
+          PY
+
+      - name: Commit and push changes
+        if: steps.current.outputs.tag != steps.upstream.outputs.tag
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Dockerfile README.md .hermes-upstream-version
+          git commit -m "chore: bump Hermes to ${{ steps.upstream.outputs.tag }}"
+          git push
+
+      - name: No changes needed
+        if: steps.current.outputs.tag == steps.upstream.outputs.tag
+        run: echo "Already pinned to latest Hermes release (${{ steps.current.outputs.tag }})"
