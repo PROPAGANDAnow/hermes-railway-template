@@ -138,7 +138,7 @@ Entrypoint (`scripts/entrypoint.sh`) does the following:
 
 Docker build arg:
 
-- `HERMES_GIT_REF` (default: `v2026.4.8`)
+- `HERMES_GIT_REF` (default: `v2026.4.13`)
 
 Override in Railway if you want to pin a tag or commit.
 
